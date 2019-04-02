@@ -1,1 +1,3 @@
-# AnkiAddonReloader
+# AddonReloader
+
+...
