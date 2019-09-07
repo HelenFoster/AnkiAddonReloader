@@ -6,9 +6,14 @@ Now working with v2.1.
 
 Original AnkiWeb: AnkiWeb: https://ankiweb.net/shared/info/348783334.
 
+## Notes
+
+- If you do a git pull between reloads, need to restart anki
+- The folder of the addon must not contain dashes or anything that wouldn't work in a normal import statement
+  - e.g. anki_LL, not anki-LL
+
 ## Current Issues
 
-- Seems to require reloading addons twice for effect to take place
 - Creates new listing in Anki "Tools" menu for addon on reload
   - Possible fixes: 
     - Add a before/after hook in the desired addon
