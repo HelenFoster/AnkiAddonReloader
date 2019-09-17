@@ -86,6 +86,7 @@ def choose_addon():
         action_repeat = None
     if choice != "":
         new_action = QAction("Reload " + choice, mw)
+        new_action.setShortcut(QKeySequence("Ctrl+R"))
 
         def reload_the_addon():
             # Call "before" if present
