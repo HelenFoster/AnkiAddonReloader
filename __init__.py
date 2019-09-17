@@ -8,10 +8,10 @@ Anki addon to reload other single-file addons (under certain conditions).
 It can help speed up addon development, but should be used with caution,
  as unexpected results can occur.
 
-To qualify, the target addon must contain the function
- addon_reloader_before() - this is allowed to do nothing.
-(addon_reloader_teardown() still works but "before" is preferred.)
-The function addon_reloader_after() is optional.
+The target addon can contain the functions:
+
+- addon_reloader_before() - optional, run before reload like a cleanup
+- addon_reloader_after() - optional, run after reload
 
 Selecting "Reload addon..." from the "Tools" menu offers a choice of eligible
  addons. After reloading an addon from this menu, a new option appears:
@@ -38,20 +38,23 @@ Multi-file addons should instead implement their own reloading, with a minimal
 See my KanjiVocab addon for an example.
 """
 
+import types
+import importlib
+
 from aqt import mw
-from PyQt4.QtCore import Qt, SIGNAL
-from PyQt4.QtGui import *
+from aqt.qt import *
+
 
 class AddonChooser(QDialog):
-    def __init__(self, mw, modules):
-        QDialog.__init__(self, mw, Qt.Window)
+    def __init__(self, modules):
+        super().__init__()
         self.setWindowTitle("Reload addon")
-        
+
         self.layout = QVBoxLayout(self)
         self.choice = QComboBox()
         self.choice.addItems(modules.keys())
         self.layout.addWidget(self.choice)
-        
+
         buttons = QDialogButtonBox()
         buttons.addButton(QDialogButtonBox.Ok)
         buttons.addButton(QDialogButtonBox.Cancel)
@@ -59,57 +62,79 @@ class AddonChooser(QDialog):
         buttons.rejected.connect(self.reject)
         self.layout.addWidget(buttons)
 
-def chooseAddon():
-    global actionRepeat
-    modules = {}
-    filenames = mw.addonManager.files()
-    for filename in filenames:
-        modname = filename.replace(".py", "")
-        try:
-            module = __import__(modname)
-        except:
-            continue  #skip broken modules
-        try:
-            tmp = module.addon_reloader_before
-        except:
-            try:
-                tmp = module.addon_reloader_teardown
-            except:
-                continue  #skip modules that don't have either function
-        modules[modname] = module
 
-    chooser = AddonChooser(mw, modules)
+def choose_addon():
+    global action_repeat
+    modules = {}
+    addon_names = mw.addonManager.allAddons()
+    for addon_name in addon_names:
+        module_name = addon_name.replace(".py", "")
+        try:
+            module = importlib.import_module(module_name)
+        except:
+            # Skip broken modules
+            continue
+        modules[module_name] = module
+
+    chooser = AddonChooser(modules)
     response = chooser.exec_()
     choice = chooser.choice.currentText()
     if response == QDialog.Rejected:
         return
-    if actionRepeat is not None:
-        mw.form.menuTools.removeAction(actionRepeat)
-        actionRepeat = None
+    if action_repeat is not None:
+        mw.form.menuTools.removeAction(action_repeat)
+        action_repeat = None
     if choice != "":
-        newAction = QAction("Reload " + choice, mw)
-        newAction.setShortcut(_("Ctrl+R"))
-        def reloadTheAddon():
-            #take "before" in preference to "teardown", but must have one
+        new_action = QAction("Reload " + choice, mw)
+        new_action.setShortcut(QKeySequence("Ctrl+R"))
+
+        def reload_the_addon():
+            # Call before and after functions if present
             try:
                 before = modules[choice].addon_reloader_before
-            except:
-                before = modules[choice].addon_reloader_teardown
-            #take "after" if present, otherwise make it do nothing
+            except AttributeError:
+                before = lambda: None
             try:
                 after = modules[choice].addon_reloader_after
-            except:
+            except AttributeError:
                 after = lambda: None
-            #execute the reloading
+            # Execute the reloading
             before()
-            reload(modules[choice])
+            reload_package(modules[choice])
             after()
-        mw.connect(newAction, SIGNAL("triggered()"), reloadTheAddon)
-        mw.form.menuTools.addAction(newAction)
-        actionRepeat = newAction
-        reloadTheAddon()
 
-actionRepeat = None
-actionChoose = QAction("Reload addon...", mw)
-mw.connect(actionChoose, SIGNAL("triggered()"), chooseAddon)
-mw.form.menuTools.addAction(actionChoose)
+        new_action.triggered.connect(reload_the_addon)
+        mw.form.menuTools.addAction(new_action)
+        action_repeat = new_action
+        reload_the_addon()
+
+
+def reload_package(package):
+    """
+    Recursively reload all package's child modules
+    :param package: package imported via __import__()
+    """
+    assert hasattr(package, "__package__")
+    fn = package.__file__
+    fn_dir = os.path.dirname(fn) + os.sep
+    module_visit = {fn}
+    del fn
+
+    def reload_recursive_ex(module):
+        importlib.reload(module)
+
+        for module_child in vars(module).values():
+            if isinstance(module_child, types.ModuleType):
+                fn_child = getattr(module_child, "__file__", None)
+                if (fn_child is not None) and fn_child.startswith(fn_dir):
+                    if fn_child not in module_visit:
+                        module_visit.add(fn_child)
+                        reload_recursive_ex(module_child)
+
+    return reload_recursive_ex(package)
+
+
+action_repeat = None
+action_choose = QAction("Reload addon...", mw)
+action_choose.triggered.connect(choose_addon)
+mw.form.menuTools.addAction(action_choose)
