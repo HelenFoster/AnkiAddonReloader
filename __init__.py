@@ -49,12 +49,12 @@ class AddonChooser(QDialog):
     def __init__(self, modules):
         super().__init__()
         self.setWindowTitle("Reload addon")
-        
+
         self.layout = QVBoxLayout(self)
         self.choice = QComboBox()
         self.choice.addItems(modules.keys())
         self.layout.addWidget(self.choice)
-        
+
         buttons = QDialogButtonBox()
         buttons.addButton(QDialogButtonBox.Ok)
         buttons.addButton(QDialogButtonBox.Cancel)
@@ -70,7 +70,7 @@ def choose_addon():
     for addon_name in addon_names:
         module_name = addon_name.replace(".py", "")
         try:
-            module = __import__(module_name)
+            module = importlib.import_module(module_name)
         except:
             # Skip broken modules
             continue
@@ -89,20 +89,20 @@ def choose_addon():
         new_action.setShortcut(QKeySequence("Ctrl+R"))
 
         def reload_the_addon():
-            # Call "before" if present
+            # Call before and after functions if present
             try:
                 before = modules[choice].addon_reloader_before
-            except:
+            except AttributeError:
                 before = lambda: None
-            # Take "after" if present
             try:
                 after = modules[choice].addon_reloader_after
-            except:
+            except AttributeError:
                 after = lambda: None
             # Execute the reloading
             before()
             reload_package(modules[choice])
             after()
+
         new_action.triggered.connect(reload_the_addon)
         mw.form.menuTools.addAction(new_action)
         action_repeat = new_action
@@ -114,7 +114,7 @@ def reload_package(package):
     Recursively reload all package's child modules
     :param package: package imported via __import__()
     """
-    assert(hasattr(package, "__package__"))
+    assert hasattr(package, "__package__")
     fn = package.__file__
     fn_dir = os.path.dirname(fn) + os.sep
     module_visit = {fn}
